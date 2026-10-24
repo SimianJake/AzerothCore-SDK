@@ -1,12 +1,13 @@
 # AzerothCore SDK: quick guide
 
 Drive "headless" characters (logged in with no game client) on an AzerothCore 3.3.5a server from Python.
-The server side is `mod-acsdk`, built into `worldserver.exe`; the client side is the `azerothcore_sdk`
-Python package (asyncio).
+The server side is the [mod-acsdk](https://github.com/SimianJake/mod-acsdk) AzerothCore module, built into `worldserver`; the client side is
+the `azerothcore_sdk` Python package (asyncio) from this repository.
 
 ## 1. Setup
 
-**Server.** In `configs\modules\mod_acsdk.conf` (copy from `mod_acsdk.conf.dist`):
+**Server.** The server owner installs [mod-acsdk](https://github.com/SimianJake/mod-acsdk) (see its README). The settings that matter to SDK
+users, in `configs\modules\mod_acsdk.conf`:
 
 | Setting | Meaning |
 |---|---|
@@ -16,8 +17,6 @@ Python package (asyncio).
 | `ACSDK.Lease.TtlSec` | How long a lease lives without renewal (default 15 s). The SDK renews automatically. |
 | `ACSDK.Prompt.TimeoutSec` | Unanswered invites/trades/duels/etc. are declined after this (default 60 s). |
 | `ACSDK.RawPackets.Enable` | Allow `send_packet()` and raw packet events (default off). |
-
-Start the realm with `scripts\run_realm.ps1` (it creates the configs and a random token the first time).
 
 **Python** (3.11+):
 

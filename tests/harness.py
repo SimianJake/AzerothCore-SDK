@@ -1,6 +1,6 @@
 """Local test realm harness: start worldserver from the build tree, send console commands, stop cleanly.
 
-Paths default to the layout in docs/windows-build.md; override with ACSDK_BIN (folder with worldserver.exe).
+Paths default to the layout in mod-acsdk's docs/windows-build.md; override with ACSDK_BIN (folder with worldserver.exe).
 worldserver shuts down when its console stdin reaches EOF, so stdin stays an open pipe for the whole run;
 CTRL_BREAK (new process group) triggers a normal shutdown.
 """

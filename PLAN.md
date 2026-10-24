@@ -4,10 +4,12 @@
 > Read this whole document before writing code. It is the source of truth for scope, architecture,
 > and sequencing. When a decision changes, update this file (see §13 Decision Log).
 
-- **Status:** Planning — no code written yet. Repository contains only this file.
+- **Status:** Released 1.0.0 (2026-10-24). The project is now two repositories: this one (Python SDK,
+  examples, integration tests, this plan) and [mod-acsdk](https://github.com/SimianJake/mod-acsdk) (the AzerothCore module and the protos).
+  Paths below that start with `server/` now live at the root of mod-acsdk. The decision log in §13 is history.
 - **Owner:** Jacob (project owner; makes final calls on open decisions in §12)
 - **Last updated:** 2026-10-21 (rev 8 — removed historical context not needed for implementation; see §13)
-- **Use:** personal project, not for distribution.
+- **Use:** public; the module works on any AzerothCore server at or after `92fed92ea`.
 - **Build target:** **Windows 10/11 x64, native (Visual Studio 2022 + CMake + vcpkg). DECIDED — do not switch platforms without the owner's approval.**
 
 ---

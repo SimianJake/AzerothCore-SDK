@@ -1,5 +1,5 @@
 """Typed events from EventService.Subscribe (PLAN.md §7). Each event type has exactly one server source
-(docs/events.md), so an occurrence arrives at most once per character stream.
+(docs/events.md in the mod-acsdk repository), so an occurrence arrives at most once per character stream.
 
     async for ev in char.events(events.Chat, events.Prompt):
         if isinstance(ev, events.Chat) and not ev.self: ...

@@ -9,7 +9,8 @@ Python 3.11+. Its only dependencies are `grpcio` and `protobuf`, which pip pulls
 
 ## 1. Build
 
-From a checkout, with the dev venv (`python\.venv`, created per `docs/windows-build.md`):
+From a checkout, with the dev venv (`py -3.12 -m venv python\.venv`, then
+`python\.venv\Scripts\pip install -e "python[dev]"`):
 
 ```powershell
 .\scripts\build_sdk.ps1
