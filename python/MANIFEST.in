@@ -1,0 +1,4 @@
+# sdist: ship the generated stubs (the protos live outside this folder, in ../proto).
+graft azerothcore_sdk/_generated
+include azerothcore_sdk/py.typed
+global-exclude __pycache__ *.py[cod]

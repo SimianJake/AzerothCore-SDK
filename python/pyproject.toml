@@ -1,0 +1,67 @@
+[build-system]
+# grpcio-tools generates the stubs at build time (setup.py). Its version fixes the minimum grpcio and
+# protobuf the generated code accepts at runtime, so bump it and [project] dependencies together.
+requires = ["setuptools>=69", "grpcio-tools==1.84.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "azerothcore-sdk"
+dynamic = ["version"]
+description = "Async Python SDK for driving headless AzerothCore characters over gRPC"
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["azerothcore", "wow", "wotlk", "grpc", "bot", "headless"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Typing :: Typed",
+]
+dependencies = [
+    "grpcio>=1.84.0,<2",     # stubs from grpcio-tools 1.84.0 refuse older grpcio
+    "protobuf>=7.35.1,<9",   # its protobuf gencode is 7.35.1; runtime may be up to one major newer
+]
+
+[project.optional-dependencies]
+dev = [
+    "grpcio-tools==1.84.0",
+    "build>=1.2",
+    "twine>=5",
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.setuptools.dynamic]
+version = { attr = "azerothcore_sdk.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["azerothcore_sdk*"]
+
+[tool.setuptools.package-data]
+azerothcore_sdk = ["py.typed", "_generated/**/*.pyi"]
+
+[tool.ruff]
+line-length = 110
+extend-exclude = ["azerothcore_sdk/_generated"]
+
+[tool.ruff.lint.isort]
+# Generated stubs import as "acsdk.*" and need plumbing.channel to put _generated on sys.path first.
+known-local-folder = ["acsdk"]
+
+[tool.mypy]
+strict = true
+exclude = ["azerothcore_sdk/_generated/"]
+
+[[tool.mypy.overrides]]
+module = ["azerothcore_sdk._generated.*", "acsdk.*", "grpc.*"]
+ignore_missing_imports = true
+ignore_errors = true

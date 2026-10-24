@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+python/.venv/
+python/azerothcore_sdk/_generated/
+*.egg-info/
+dist/
+python/build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# C++ / CMake / vcpkg
+build/
+out/
+vcpkg_installed/
+*.user
+.vs/
+
+# Local config (secrets such as ACSDK.AuthToken)
+*.conf
+!*.conf.dist
+tests/out/
+.venv/
+consumer/wheels/
+tests/local.env

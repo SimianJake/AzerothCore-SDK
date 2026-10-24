@@ -1,0 +1,37 @@
+{
+  "character": "Examplechar2",
+  "destination_name": "Sentinel Hill",
+  "destination": [
+    -10624.5,
+    1096.66,
+    33.76
+  ],
+  "arrived": true,
+  "reason": "",
+  "start": [
+    -8921.08984375,
+    -119.13500213623047,
+    82.19499969482422
+  ],
+  "start_zone": 12,
+  "end": [
+    -10624.5,
+    1096.6600341796875,
+    33.759681701660156
+  ],
+  "end_zone": 40,
+  "entered_westfall": {
+    "zone": 40,
+    "position": [
+      -10146.1328125,
+      810.6666259765625,
+      21.68455696105957
+    ],
+    "at_s": 232.3
+  },
+  "seconds": 317.9,
+  "distance_walked_yd": 2144.7,
+  "straight_line_yd": 2092.8,
+  "hops": 43,
+  "path_queries": 6
+}
