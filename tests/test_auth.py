@@ -86,7 +86,9 @@ async def test_login_and_whoami(make_client) -> None:  # type: ignore[no-untyped
 
 async def test_wrong_password_and_unknown_account_look_the_same(realm: Realm) -> None:
     errors = []
-    for account in (Account(ACCOUNTS[0].username, ACCOUNTS[0].password + "x"), Account("ACSDKHCNOSUCHUSER", "whatever")):
+    pw = ACCOUNTS[0].password
+    wrong = pw[:-1] + ("x" if pw[-1:].lower() != "x" else "y")  # same length: stays within AzerothCore's limit
+    for account in (Account(ACCOUNTS[0].username, wrong), Account("ACSDKHCNOSUCH", "whatever")):
         with pytest.raises(Unauthenticated) as e:
             await Client(TARGET, username=account.username, password=account.password).connect()
         errors.append(str(e.value))
