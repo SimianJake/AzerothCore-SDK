@@ -1,7 +1,7 @@
 """Account logins (mod-acsdk 1.1, ARCHITECTURE.md §4.3): sessions, owner-only access, bans, revocation, admin.
 
-Keep the number of failed logins per run at three or fewer: the server's in-memory backoff is per username and per
-peer address, and every test client shares 127.0.0.1, so more failures would delay the following logins.
+Keep the number of failed logins per run well under 20: the server's backoff per peer address (shared by every
+test client on 127.0.0.1) allows 20 failures before it delays logins. Per username it allows three.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pytest
 from conftest import ACCOUNTS, ADMIN, BANNED, CHARACTERS, RECHECK_SEC, TARGET, Account
 from harness import Realm
 
-from azerothcore_sdk import AccountRefused, Client, NotYourCharacter, Unauthenticated, events
+from azerothcore_sdk import AccountRefused, Client, NotYourCharacter, ServerBusy, Unauthenticated, events
 from azerothcore_sdk.plumbing import DebugService
 from azerothcore_sdk.plumbing import channel as _channel  # noqa: F401  (puts _generated on sys.path)
 
@@ -93,6 +93,19 @@ async def test_wrong_password_and_unknown_account_look_the_same(realm: Realm) ->
             await Client(TARGET, username=account.username, password=account.password).connect()
         errors.append(str(e.value))
     assert errors[0] == errors[1], errors
+
+
+async def test_one_clients_typos_do_not_lock_out_others(realm: Realm) -> None:
+    # Three wrong passwords for one (unknown) username: free. The fourth attempt for it is held back ...
+    for _ in range(3):
+        with pytest.raises(Unauthenticated):
+            await Client(TARGET, username="ACSDKHCTYPO", password="wrong").connect()
+    with pytest.raises(ServerBusy, match="too many failed logins"):
+        await Client(TARGET, username="ACSDKHCTYPO", password="wrong").connect()
+    # ... but other accounts on the same machine (same peer address) log in right away.
+    ok = Client(TARGET, username=ACCOUNTS[1].username, password=ACCOUNTS[1].password)
+    await ok.connect()
+    await ok.close()
 
 
 async def test_list_shows_only_own_characters(make_client) -> None:  # type: ignore[no-untyped-def]

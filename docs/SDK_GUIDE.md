@@ -13,7 +13,7 @@ users, in `configs\modules\mod_acsdk.conf`:
 |---|---|
 | `ACSDK.BindAddress` / `ACSDK.Port` | Where the SDK listens. Default `127.0.0.1:50051`; loopback addresses only (no TLS yet). |
 | `ACSDK.HeadlessAccountPrefix` | Only accounts whose names start with this (default `acsdkhc`; empty = any) may log in to the SDK. They must be player-level, not GM. |
-| `ACSDK.Auth.SessionIdleSec` / `.SessionMaxSec` | A session ends after 30 min without a call, and after 24 h in any case. The SDK logs in again by itself. |
+| `ACSDK.Auth.SessionIdleSec` / `.SessionMaxSec` | A session ends after 30 min without a call or an open event stream, and after 24 h in any case. The SDK logs in again by itself. |
 | `ACSDK.Auth.AllowGmAccounts` / `.AdminGmLevel` | GM accounts are refused unless allowed; a GM account at `AdminGmLevel` (3) gets an admin session (`stats()`, test provisioning), never other accounts' characters. |
 
 **Accounts.** You log in with an ordinary AzerothCore game account, which the server owner creates for you
@@ -118,7 +118,7 @@ Ready-made scripts in `examples\`: `hello_character.py`, `kill_a_mob.py`, `chat_
 | `NotYourCharacter` | `PERMISSION_DENIED`: the character is on another account, or the call needs an admin session (`stats()`, `DebugService`). | Use your own account's characters. |
 | `IncompatibleServer` | The server's `mod-acsdk` is older than 1.1 (shared token) or speaks another API version. | Use the SDK version that matches the server. |
 | `ServerUnavailable` | Can't reach the SDK listener. | Is worldserver running? Right address/port? |
-| `ServerBusy` | Server's command queue is full, or too many failed logins (wait the seconds it says; programs on the same machine share the limit). | Back off and retry. |
+| `ServerBusy` | Server's command queue is full, or too many failed logins (wait the seconds it says; it applies to the username that kept failing). | Back off and retry. |
 | `Timeout` | The call's deadline passed. | Usually the server is overloaded or stuck; retry. |
 | `LoginFailed(reason)` | `characters.login()` refused; see login reasons below. | |
 | `LeaseError(reason)` | Claiming / releasing the lease failed (e.g. `ALREADY_LEASED`). | |

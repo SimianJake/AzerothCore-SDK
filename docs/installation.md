@@ -252,7 +252,7 @@ Python extension works well. Point it at your venv with "Python: Select Interpre
 | `ServerUnavailable` | Your program cannot reach the server. Check the address, that the SSH tunnel or VPN is up, and ask the owner whether the server is running. |
 | `Unauthenticated` | Wrong account name or password (it is not case-sensitive). Copy them again exactly, with no spaces or quotes around them. |
 | `AccountRefused` | The password is right but the account may not use the SDK: `BANNED`, `LOCKED`, `GM_ACCOUNT`, or `ACCOUNT_NOT_ELIGIBLE` (its name does not start with the server's account prefix). Ask the server owner. |
-| `ServerBusy: too many failed logins` | Several wrong passwords in a row; wait the number of seconds it says. Programs on the same computer share this limit. |
+| `ServerBusy: too many failed logins` | Several wrong passwords in a row for that account name; wait the number of seconds it says. Other accounts are not affected. |
 | `NotYourCharacter` | That character is on another account. You can only use your own account's characters. |
 | `IncompatibleServer` | The server runs an older `mod-acsdk` (before 1.1, which still used a shared token). Ask the owner which SDK version to use. |
 | `LoginFailed` | The character could not be logged in; the reason is in the message. `CHARACTER_NOT_FOUND`: check the spelling. `ACCOUNT_ALREADY_ONLINE`: someone is playing a character on your account in the game, or another of your characters is already logged in. |
