@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import builtins
 
 import grpc
 
 from azerothcore_sdk.plumbing import channel as _channel  # noqa: F401  (puts _generated on sys.path)
-from azerothcore_sdk.plumbing.errors import translate
+from azerothcore_sdk.plumbing.errors import AccountRefused, NotYourCharacter, translate
 from azerothcore_sdk.plumbing.models import (
     CharacterState,
     CharacterSummary,
@@ -20,10 +21,13 @@ from azerothcore_sdk.plumbing.models import (
     QuestObjective,
     ServerInfo,
     ServerStats,
+    Session,
     StateSection,
 )
 
 from acsdk.v1 import (
+    auth_pb2,
+    auth_pb2_grpc,
     character_pb2,
     character_pb2_grpc,
     debug_pb2,
@@ -40,6 +44,33 @@ DEFAULT_TIMEOUT = 10.0
 def _item(i: character_pb2.InventoryItem) -> InventoryItem:
     return InventoryItem(i.item_guid, i.item_id, i.name, i.count, i.bag, i.slot, i.durability, i.max_durability,
                          i.quality, i.item_level, i.required_level, i.inventory_type, i.sell_price_copper)
+
+
+class AuthService:
+    """Account sessions (mod-acsdk 1.1). Login sends the password only in 'authorization: Basic' metadata."""
+
+    def __init__(self, channel: grpc.aio.Channel) -> None:
+        self._stub = auth_pb2_grpc.AuthServiceStub(channel)
+
+    async def login(self, username: str, password: str, label: str = "",
+                    timeout: float = DEFAULT_TIMEOUT) -> tuple[str, Session]:
+        """Returns (session token, session). Raises Unauthenticated for a wrong username or password."""
+        basic = base64.b64encode(f"{username}:{password}".encode()).decode()
+        try:
+            r = await translate(self._stub.Login(auth_pb2.AuthLoginRequest(label=label), timeout=timeout,
+                                                 metadata=[("authorization", f"Basic {basic}")]))
+        except NotYourCharacter as e:
+            raise AccountRefused(str(e)) from e
+        return r.session_token, Session(account_id=r.account_id, username=r.username, admin=r.admin,
+                                        idle_timeout_s=r.idle_timeout_s, max_lifetime_s=r.max_lifetime_s, label=label)
+
+    async def logout(self, timeout: float = DEFAULT_TIMEOUT) -> bool:
+        r = await translate(self._stub.Logout(auth_pb2.AuthLogoutRequest(), timeout=timeout))
+        return bool(r.ok)
+
+    async def who_am_i(self, timeout: float = DEFAULT_TIMEOUT) -> Session:
+        r = await translate(self._stub.WhoAmI(auth_pb2.WhoAmIRequest(), timeout=timeout))
+        return Session(account_id=r.account_id, username=r.username, admin=r.admin, label=r.label)
 
 
 class DebugService:
@@ -80,6 +111,8 @@ class ServerService:
             uptime_ms=r.uptime_ms,
             world_ticks=r.world_ticks,
             last_tick_diff_ms=r.last_tick_diff_ms,
+            api_minor=r.api_minor,
+            auth_modes=tuple(r.auth_modes),
         )
 
     async def get_stats(self, timeout: float = DEFAULT_TIMEOUT) -> ServerStats:
@@ -105,7 +138,7 @@ class CharacterService:
         self._stub = character_pb2_grpc.CharacterServiceStub(channel)
 
     async def list(self, timeout: float = DEFAULT_TIMEOUT) -> tuple[list[CharacterSummary], bool]:
-        """Returns (characters on eligible accounts, truncated)."""
+        """Returns (the session account's characters, truncated)."""
         r = await translate(self._stub.List(character_pb2.ListCharactersRequest(), timeout=timeout))
         characters = [
             CharacterSummary(

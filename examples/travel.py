@@ -1,15 +1,16 @@
 """Long-distance pathfinding: walk a headless character to a far point with helpers.travel(), then write the
 route as an SVG and a JSON log.
 
-    python examples\\travel.py --token <ACSDK.AuthToken> --character <name> --to -10624.5 1096.66 33.76 \\
+    python examples\\travel.py --character <name> --to -10624.5 1096.66 33.76 \\
         --name "Sentinel Hill" --timeout 3600 --out travel_out
+
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 """
 
 import argparse
 import asyncio
 import json
 import logging
-import os
 import time
 from pathlib import Path
 
@@ -22,7 +23,6 @@ WESTFALL_ZONE = 40
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="127.0.0.1:50051")
-    parser.add_argument("--token", default=os.environ.get("ACSDK_TOKEN", ""))
     parser.add_argument("--character", required=True)
     parser.add_argument("--to", type=float, nargs=3, required=True, metavar=("X", "Y", "Z"))
     parser.add_argument("--name", default="destination")
@@ -35,7 +35,7 @@ async def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     dest = tuple(args.to)
 
-    async with Client(args.target, token=args.token, controller_id="travel") as ac:
+    async with Client(args.target, label="travel") as ac:
         char = await ac.characters.login(args.character)
         async with char.lease():
             first_zone_change: dict[str, object] = {}

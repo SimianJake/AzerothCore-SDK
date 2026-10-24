@@ -22,7 +22,7 @@ from azerothcore_sdk.plumbing import (
     StateSection,
     WorldObject,
 )
-from azerothcore_sdk.plumbing.errors import AcsdkError
+from azerothcore_sdk.plumbing.errors import AcsdkError, NotYourCharacter, Unauthenticated
 
 if TYPE_CHECKING:
     from azerothcore_sdk.client import Client
@@ -310,6 +310,10 @@ class Character:
             await asyncio.sleep(max(ttl_ms / 3000.0, 0.5))
             try:
                 new_ttl, reason = await self._client._plumbing_leases.renew(self.guid, lease.token)
+            except (Unauthenticated, NotYourCharacter) as e:
+                # The session ended (and was not renewed by an automatic re-login): its leases ended with it.
+                new_ttl, reason = None, "SESSION_ENDED"
+                log.warning("lease renew for %s failed: %s", self.name, e)
             except AcsdkError as e:  # transient transport trouble: keep trying until the TTL runs out
                 log.warning("lease renew for %s failed: %s", self.name, e)
                 continue

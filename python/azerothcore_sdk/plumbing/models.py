@@ -15,6 +15,19 @@ class ServerInfo:
     uptime_ms: int
     world_ticks: int
     last_tick_diff_ms: int
+    api_minor: int = 0                      # 1 = account sessions (mod-acsdk 1.1)
+    auth_modes: tuple[str, ...] = ()        # e.g. ("basic",)
+
+
+@dataclass(frozen=True, slots=True)
+class Session:
+    """The account session a Client is logged in as."""
+    account_id: int
+    username: str
+    admin: bool
+    idle_timeout_s: int = 0
+    max_lifetime_s: int = 0
+    label: str = ""
 
 
 @dataclass(frozen=True, slots=True)

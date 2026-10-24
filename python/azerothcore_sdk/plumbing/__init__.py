@@ -19,9 +19,12 @@ from azerothcore_sdk.plumbing.actions import (
     WorldObject,
     WorldService,
 )
-from azerothcore_sdk.plumbing.channel import connect
+from azerothcore_sdk.plumbing.channel import SessionAuth, connect
 from azerothcore_sdk.plumbing.errors import (
+    AccountRefused,
     AcsdkError,
+    IncompatibleServer,
+    NotYourCharacter,
     RpcError,
     ServerBusy,
     ServerUnavailable,
@@ -40,13 +43,22 @@ from azerothcore_sdk.plumbing.models import (
     QuestObjective,
     ServerInfo,
     ServerStats,
+    Session,
     StateSection,
 )
-from azerothcore_sdk.plumbing.services import CharacterService, DebugService, LeaseService, ServerService
+from azerothcore_sdk.plumbing.services import (
+    AuthService,
+    CharacterService,
+    DebugService,
+    LeaseService,
+    ServerService,
+)
 
 __all__ = [
+    "AccountRefused",
     "AcsdkError",
     "ActionService",
+    "AuthService",
     "CharacterService",
     "CharacterState",
     "CharacterSummary",
@@ -56,6 +68,7 @@ __all__ = [
     "DebugService",
     "GossipOption",
     "Height",
+    "IncompatibleServer",
     "Interaction",
     "InventoryItem",
     "ItemInfo",
@@ -65,6 +78,7 @@ __all__ = [
     "Lifecycle",
     "LoginResult",
     "LootedItem",
+    "NotYourCharacter",
     "ObjectKind",
     "PathFlags",
     "PathResult",
@@ -77,6 +91,8 @@ __all__ = [
     "ServerService",
     "ServerStats",
     "ServerUnavailable",
+    "Session",
+    "SessionAuth",
     "SpellInfo",
     "StateSection",
     "Timeout",

@@ -1,13 +1,14 @@
 """Phase 4 acceptance: echo every whisper a headless character receives back to its sender.
 
-    python examples\\chat_echo.py --token <ACSDK.AuthToken> --character <name>
+    python examples\\chat_echo.py --character <name>
 
 Runs until Ctrl+C. Uses one event stream (Chat events of this character) and Whisper commands.
+
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 """
 
 import argparse
 import asyncio
-import os
 
 from azerothcore_sdk import Client, events
 
@@ -27,11 +28,10 @@ async def name_of(ac: Client, char, guid: int, cache: dict[int, str]) -> str | N
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="127.0.0.1:50051")
-    parser.add_argument("--token", default=os.environ.get("ACSDK_TOKEN", ""))
     parser.add_argument("--character", required=True)
     args = parser.parse_args()
 
-    async with Client(args.target, token=args.token, controller_id="chat-echo") as ac:
+    async with Client(args.target, label="chat-echo") as ac:
         char = await ac.characters.login(args.character)
         async with char.lease():
             print(f"{char.name} is echoing whispers (Ctrl+C to stop)")

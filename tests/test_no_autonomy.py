@@ -26,8 +26,8 @@ def fingerprint(s: CharacterState) -> tuple[object, ...]:
 
 
 async def test_unclaimed_characters_never_act(make_client) -> None:  # type: ignore[no-untyped-def]
-    observer = await make_client("no-autonomy-observer")
-    chars = [await observer.characters.login(name) for name in CHARACTERS]
+    # One client per account: a session sees only its own account's characters.
+    chars = [await (await make_client(f"no-autonomy-observer-{i}", i)).characters.login(name) for i, name in enumerate(CHARACTERS)]
     await asyncio.sleep(5)  # let login settle
     baseline = {c.name: fingerprint(await c.state()) for c in chars}
 

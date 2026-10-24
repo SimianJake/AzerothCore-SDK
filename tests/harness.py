@@ -20,13 +20,6 @@ LOG = BIN / "Server.log"
 MOD_CONF = BIN / "configs" / "modules" / "mod_acsdk.conf"
 
 
-def read_token() -> str:
-    m = re.search(r'^ACSDK.AuthToken\s*=\s*"([^"]+)"', MOD_CONF.read_text(), re.MULTILINE)
-    if not m:
-        raise RuntimeError(f"ACSDK.AuthToken not set in {MOD_CONF}")
-    return m.group(1)
-
-
 def set_module_option(key: str, value: str) -> None:
     """Set (or append) `key = value` in mod_acsdk.conf. Takes effect at the next worldserver start."""
     text = MOD_CONF.read_text()

@@ -154,20 +154,21 @@ does not need it.
 Send them [installation.md](installation.md), `SDK_GUIDE.md`, the `.whl` file (or your index
 address) and, if you like, the `examples` folder. Separately and privately, give them:
 
-- the **server address**, and how to reach it. The SDK listens on `127.0.0.1:50051` by default, so
-  only the server PC can connect, and the connection is not encrypted. For other machines use an
-  **SSH tunnel** (`ssh -N -L 50051:127.0.0.1:50051 user@game-server`, with no config change), or a
-  **VPN** such as Tailscale with `ACSDK.BindAddress` set to the VPN address. Use
-  `ACSDK.BindAddress = 0.0.0.0` only on a trusted LAN with the firewall limited to known hosts, and
-  never expose port 50051 to the internet;
-- the **token** (`ACSDK.AuthToken` from `configs\modules\mod_acsdk.conf`). It is shared by everyone,
-  so anyone who has it can drive every headless character;
-- the **character names** they may drive. These must be on accounts whose names start with
-  `ACSDK.HeadlessAccountPrefix` (default `acsdkhc`), and the accounts must be player-level, not GM.
+- the **server address**, and how to reach it. The SDK listens on `127.0.0.1:50051` and, because the
+  connection is not encrypted (passwords and session tokens cross it), mod-acsdk 1.1 refuses to listen on
+  anything but a loopback address. For other machines use an **SSH tunnel**
+  (`ssh -N -L 50051:127.0.0.1:50051 user@game-server`); never expose port 50051;
+- their own **account name and password**: an ordinary game account you create for them
+  (`account create <name> <password>` in the worldserver console), whose name starts with
+  `ACSDK.HeadlessAccountPrefix` (default `acsdkhc`), player-level, not GM. A login can only see and drive
+  that account's characters, so give each person their own account;
+- the **character names** on that account.
 
 ## 5. Compatibility
 
 The SDK speaks the `acsdk.v1` protocol, so it connects to any `mod-acsdk` build that serves
 `acsdk.v1`. A call added in a newer SDK can fail against an older server build, so ship the wheel
 and the server from the same commit when you can (`package.ps1` does that). `await ac.server.info()`
-reports the server's `api_version` and `sdk_version` if you need to check.
+reports the server's `api_version`, `api_minor` and `sdk_version` if you need to check. SDK 1.1 needs
+mod-acsdk 1.1 or newer (account logins) and says so with `IncompatibleServer` when connecting to a 1.0 server;
+SDK 1.0 cannot talk to a 1.1 server (its shared token is gone).

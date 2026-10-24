@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 import string
 
-from conftest import CASTERS, CHARACTERS, KOBOLD_FIELD
+from conftest import ADMIN, CASTERS, CHARACTERS, KOBOLD_FIELD
 
 from azerothcore_sdk import StateSection
 from azerothcore_sdk.helpers import approach, kill
@@ -23,11 +23,12 @@ async def npc(char, name: str):  # type: ignore[no-untyped-def]
 
 
 async def test_create_character_returns_stored_name(make_client, realm) -> None:  # type: ignore[no-untyped-def]
-    ac = await make_client("create-test")
-    for c in await ac.characters.list():  # the account must have nobody online
-        if c.account_name.upper() == ACCOUNT and c.state.name != "OFFLINE":
-            await ac._plumbing_characters.logout(c.guid)
-    dbg = DebugService(ac.channel)
+    owner = await make_client("create-test", 1)
+    for c in await owner.characters.list():  # the account must have nobody online
+        if c.state.name != "OFFLINE":
+            await owner._plumbing_characters.logout(c.guid)
+    admin = await make_client("create-test-admin", ADMIN)  # DebugService is admin-only
+    dbg = DebugService(admin.channel)
     name = "zz" + "".join(random.choice(string.ascii_lowercase) for _ in range(6))
     try:
         ok, reason, guid, stored = await dbg.create_character(ACCOUNT, name, race=1, class_id=1)

@@ -11,9 +11,15 @@ users, in `configs\modules\mod_acsdk.conf`:
 
 | Setting | Meaning |
 |---|---|
-| `ACSDK.AuthToken` | Shared secret every controller must send. **Required**: the SDK listener does not start without it. |
-| `ACSDK.BindAddress` / `ACSDK.Port` | Where the SDK listens. Default `127.0.0.1:50051` (this machine only). |
-| `ACSDK.HeadlessAccountPrefix` | Only characters on accounts starting with this (default `acsdkhc`) can be driven. Those accounts must be player-level, not GM. |
+| `ACSDK.BindAddress` / `ACSDK.Port` | Where the SDK listens. Default `127.0.0.1:50051`; loopback addresses only (no TLS yet). |
+| `ACSDK.HeadlessAccountPrefix` | Only accounts whose names start with this (default `acsdkhc`; empty = any) may log in to the SDK. They must be player-level, not GM. |
+| `ACSDK.Auth.SessionIdleSec` / `.SessionMaxSec` | A session ends after 30 min without a call, and after 24 h in any case. The SDK logs in again by itself. |
+| `ACSDK.Auth.AllowGmAccounts` / `.AdminGmLevel` | GM accounts are refused unless allowed; a GM account at `AdminGmLevel` (3) gets an admin session (`stats()`, test provisioning), never other accounts' characters. |
+
+**Accounts.** You log in with an ordinary AzerothCore game account, which the server owner creates for you
+(`account create <name> <password>` in the worldserver console). A login sees and drives **only that account's
+characters**; anything about another account's character fails with `NotYourCharacter`. An account has one SDK
+session at a time: a second login (another program, same account) ends the first one, and its leases with it.
 | `ACSDK.Lease.TtlSec` | How long a lease lives without renewal (default 15 s). The SDK renews automatically. |
 | `ACSDK.Prompt.TimeoutSec` | Unanswered invites/trades/duels/etc. are declined after this (default 60 s). |
 | `ACSDK.RawPackets.Enable` | Allow `send_packet()` and raw packet events (default off). |
@@ -21,7 +27,7 @@ users, in `configs\modules\mod_acsdk.conf`:
 **Python** (3.11+):
 
 ```bash
-pip install azerothcore_sdk-1.0.0-py3-none-any.whl
+pip install azerothcore_sdk-1.1.0-py3-none-any.whl
 ```
 
 Step-by-step setup for a new user is in [installation.md](installation.md). How to build and host the
@@ -34,7 +40,8 @@ import asyncio
 from azerothcore_sdk import Client
 
 async def main():
-    async with Client("127.0.0.1:50051", token="<ACSDK.AuthToken>", controller_id="my-bot") as ac:
+    # username/password default to the ACSDK_USERNAME / ACSDK_PASSWORD environment variables
+    async with Client("127.0.0.1:50051", username="acsdkhcalex", password="...", label="my-bot") as ac:
         char = await ac.characters.login("Examplechar")      # no-op if already online
         async with char.lease():                          # claim control; released on exit
             print(await char.state())
@@ -46,9 +53,16 @@ asyncio.run(main())
 
 Key ideas:
 
-- **Observe freely, command with a lease.** Anyone with the token can read state and events. To *act*, a
-  controller must hold the character's **lease** (`async with char.lease():`). Only one controller holds it
-  at a time; others get `ALREADY_LEASED` (or can take over with `char.lease(force=True)`).
+- **Your account, your characters.** `ac.characters.list()` shows your account's characters; nothing else is
+  visible. `ac.session` says who you are logged in as.
+- **Observe freely, command with a lease.** You can read your characters' state and events at any time. To
+  *act*, you must hold the character's **lease** (`async with char.lease():`). One lease per character; a
+  second claim gets `ALREADY_LEASED` (or takes over with `char.lease(force=True)`). A lease belongs to the
+  session that claimed it: when the session ends (logout, another login of the account, 30 min idle,
+  revoked by the server owner), the lease ends with `LeaseLost` reason `SESSION_ENDED`.
+- **Sessions renew themselves.** If a call finds the session gone, the client logs in once more and retries
+  (`Client(..., relogin=False)` turns that off). Leases do not come back: claim again. `close()` (the end of
+  `async with`) logs out.
 - **Nothing happens on its own.** A logged-in character only does what a controller tells it. If the
   controller disappears, the lease expires and the character stops where it is.
 - **Every action resolves to a result** (`CommandResult`): `status` (COMPLETED / FAILED / TIMEOUT /
@@ -99,16 +113,19 @@ Ready-made scripts in `examples\`: `hello_character.py`, `kill_a_mob.py`, `chat_
 
 | Exception | Meaning | What to do |
 |---|---|---|
-| `Unauthenticated` | Wrong or missing server token. | Use the `ACSDK.AuthToken` value from `mod_acsdk.conf`. |
+| `Unauthenticated` | Wrong username or password, or the session ended and could not be renewed. | Check `ACSDK_USERNAME` / `ACSDK_PASSWORD`. Unknown account and wrong password give the same error. |
+| `AccountRefused` | Right password, but the account may not use the SDK: `BANNED`, `LOCKED`, `GM_ACCOUNT`, `ACCOUNT_NOT_ELIGIBLE`. | Ask the server owner. |
+| `NotYourCharacter` | `PERMISSION_DENIED`: the character is on another account, or the call needs an admin session (`stats()`, `DebugService`). | Use your own account's characters. |
+| `IncompatibleServer` | The server's `mod-acsdk` is older than 1.1 (shared token) or speaks another API version. | Use the SDK version that matches the server. |
 | `ServerUnavailable` | Can't reach the SDK listener. | Is worldserver running? Right address/port? |
-| `ServerBusy` | Server's command queue is full. | Back off and retry. |
+| `ServerBusy` | Server's command queue is full, or too many failed logins (wait the seconds it says; programs on the same machine share the limit). | Back off and retry. |
 | `Timeout` | The call's deadline passed. | Usually the server is overloaded or stuck; retry. |
 | `LoginFailed(reason)` | `characters.login()` refused; see login reasons below. | |
 | `LeaseError(reason)` | Claiming / releasing the lease failed (e.g. `ALREADY_LEASED`). | |
 | `LeaseLost` | Set on `char.lease_lost` when your lease ended while you held it. | Re-claim if you still need control. |
 | `SpellNotKnown` | `cast("Name")` found no such spell in the character's spellbook. | Check the spelling or use the spell id. |
 | `AcsdkError(reason)` | Base class; also raised by `logout()` and prompt answers with the reason. | |
-| `RpcError(code)` | Any other gRPC error, e.g. `PERMISSION_DENIED` (raw packets disabled) or `FAILED_PRECONDITION` (world query on a character that isn't online). | |
+| `RpcError(code)` | Any other gRPC error, e.g. `FAILED_PRECONDITION` (world query on a character that isn't online). Raw packets disabled is `PERMISSION_DENIED` and so raises `NotYourCharacter`. | |
 
 ### Command results (`r.status`, `r.reason`)
 
@@ -147,13 +164,13 @@ Ready-made scripts in `examples\`: `hello_character.py`, `kill_a_mob.py`, `chat_
 | Reason | Meaning |
 |---|---|
 | `CHARACTER_NOT_FOUND` | No character with that name. |
-| `ACCOUNT_NOT_ELIGIBLE` | The account name doesn't start with `ACSDK.HeadlessAccountPrefix`. |
+| `ACCOUNT_NOT_ELIGIBLE` | The account name doesn't start with `ACSDK.HeadlessAccountPrefix`. (Logging in to the SDK already checks this.) |
 | `ACCOUNT_NOT_PLAYER_LEVEL` | GM accounts can't be driven headless (their chat could run GM commands). |
 | `ACCOUNT_ALREADY_ONLINE` / `CHARACTER_ALREADY_ONLINE` | Someone (a game client or another headless character on that account) is already logged in. One character per account. |
 | `MAX_HEADLESS_CHARACTERS` | `ACSDK.MaxHeadlessCharacters` reached. |
 | `SERVER_SHUTDOWN` / `LOGIN_FAILED` | Server stopping / the game rejected the login (see worldserver log). |
 
-Test provisioning (`plumbing.DebugService`, needs `ACSDK.Debug.Enable = 1`): `create_character()` returns
+Test provisioning (`plumbing.DebugService`, needs `ACSDK.Debug.Enable = 1` and an admin session): `create_character()` returns
 `(ok, reason, guid, name)`. The name comes back as stored (the game capitalises it: `examplepaladin` ->
 `Examplepaladin`). Reasons are `NAME_IN_USE`, `ACCOUNT_ALREADY_ONLINE` (log its character out first),
 `ACCOUNT_NOT_ELIGIBLE`, or the game's own code such as `CHAR_NAME_INVALID_CHARACTER`.
@@ -162,7 +179,8 @@ Test provisioning (`plumbing.DebugService`, needs `ACSDK.Debug.Enable = 1`): `cr
 
 | Reason | Meaning |
 |---|---|
-| `ALREADY_LEASED` | Another controller holds it. Wait, or use `force=True` if takeover is allowed. |
+| `ALREADY_LEASED` | Another handle in your session holds it. Use `force=True` to take over if takeover is allowed. |
+| `INVALID_LEASE_TOKEN` | No lease, an old token, or a token from another session (a lease is valid only in the session that claimed it). |
 | `NOT_HEADLESS` | Log the character in before claiming it. |
 | `TAKEOVER_DISABLED` | `ACSDK.Lease.AllowForceTakeover = 0`. |
 | `NOT_LEASED` / `NOT_HEADLESS_ONLINE` | Nothing to release / nothing to log out. |
@@ -177,7 +195,8 @@ Test provisioning (`plumbing.DebugService`, needs `ACSDK.Debug.Enable = 1`): `cr
 
 ## 5. Tips
 
-- Keep one `Client` per controller; many characters can share it.
+- Keep one `Client` per program; all your account's characters can share it. A second `Client` with the same
+  account ends the first one's session.
 - Face your target before melee or casting: the game requires it, and headless characters don't turn by themselves.
 - Mobs fight back. Low-level characters walking through dangerous zones may die; `char.state().dead` tells you.
-- Server diagnostics: `await ac.server.stats()` (queue depth, events dropped, tick time).
+- Server diagnostics: `await ac.server.stats()` (queue depth, events dropped, tick time); admin sessions only.

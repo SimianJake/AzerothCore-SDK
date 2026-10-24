@@ -19,4 +19,5 @@ The SDK talks to the server through the **[mod-acsdk](https://github.com/SimianJ
 - **Design and decisions:** [PLAN.md](PLAN.md); how everything works, file by file:
   [ARCHITECTURE.md](https://github.com/SimianJake/mod-acsdk/blob/main/docs/ARCHITECTURE.md) in the module repository
 - **Tests:** `python\.venv\Scripts\python.exe -m pytest tests -v`. They start a local worldserver built with the
-  module (see `tests/harness.py`) and need test accounts named in `tests/local.env` (see `tests/local.env.example`).
+  module (see `tests/harness.py`) and need two test accounts and their characters named in `tests/local.env` (see
+  `tests/local.env.example`). `test_client_auth.py` and `test_proto_pinned.py` need no server.

@@ -15,7 +15,21 @@ class AcsdkError(Exception):
 
 
 class Unauthenticated(AcsdkError):
-    """The server token was missing or wrong."""
+    """Wrong username or password, or the session is missing, expired, replaced or revoked."""
+
+
+class NotYourCharacter(AcsdkError):
+    """PERMISSION_DENIED: the character is on another account (a session acts only for its own account's
+    characters), or the call needs an admin session."""
+
+
+class AccountRefused(NotYourCharacter):
+    """Login with the right password, but the account may not use the SDK: BANNED, LOCKED, GM_ACCOUNT (GM accounts
+    need ACSDK.Auth.AllowGmAccounts) or ACCOUNT_NOT_ELIGIBLE (ACSDK.HeadlessAccountPrefix)."""
+
+
+class IncompatibleServer(AcsdkError):
+    """The server's mod-acsdk is too old (or too new) for this SDK version."""
 
 
 class ServerBusy(AcsdkError):
@@ -41,6 +55,7 @@ class RpcError(AcsdkError):
 
 _BY_CODE: dict[grpc.StatusCode, type[AcsdkError]] = {
     grpc.StatusCode.UNAUTHENTICATED: Unauthenticated,
+    grpc.StatusCode.PERMISSION_DENIED: NotYourCharacter,
     grpc.StatusCode.RESOURCE_EXHAUSTED: ServerBusy,
     grpc.StatusCode.UNAVAILABLE: ServerUnavailable,
     grpc.StatusCode.DEADLINE_EXCEEDED: Timeout,

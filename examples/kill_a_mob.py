@@ -1,13 +1,14 @@
 """Phase 3 acceptance: find a hostile mob, path to it, attack it, cast on it, and kill it.
 
-    python examples\\kill_a_mob.py --token <ACSDK.AuthToken> --character <name> [--spell "Heroic Strike"]
+    python examples\\kill_a_mob.py --character <name> [--spell "Heroic Strike"]
 
 Every await resolves to a terminal result with AzerothCore's own reason on failure.
+
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 """
 
 import argparse
 import asyncio
-import os
 
 from azerothcore_sdk import Client
 from azerothcore_sdk.helpers import kill
@@ -16,13 +17,12 @@ from azerothcore_sdk.helpers import kill
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="127.0.0.1:50051")
-    parser.add_argument("--token", default=os.environ.get("ACSDK_TOKEN", ""))
     parser.add_argument("--character", required=True)
     parser.add_argument("--spell", action="append", default=[], help="spell name or id to cast each round (repeatable)")
     parser.add_argument("--radius", type=float, default=100.0)
     args = parser.parse_args()
 
-    async with Client(args.target, token=args.token, controller_id="kill-a-mob") as ac:
+    async with Client(args.target, label="kill-a-mob") as ac:
         char = await ac.characters.login(args.character)
         async with char.lease():
             mobs = [m for m in await char.nearby("creature", radius=args.radius, hostile=True) if m.attackable]
