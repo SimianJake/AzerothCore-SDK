@@ -9,10 +9,11 @@ import struct
 import time
 from collections.abc import AsyncIterator
 
-from conftest import CASTERS, CHARACTERS
+from conftest import ADMIN, CASTERS, CHARACTERS
 
 from azerothcore_sdk import Character, Client, events
-from azerothcore_sdk.plumbing import CommandStatus, StateSection
+from azerothcore_sdk.plumbing import CommandStatus, SessionAuth, StateSection, connect
+from azerothcore_sdk.plumbing.eventstream import EventService
 
 A, B = CHARACTERS[0], CHARACTERS[1]
 MAGE = CASTERS[0][1]  # shares the first test account with the warrior
@@ -50,21 +51,25 @@ class Collector:
             await self._task
 
 
-async def logged_in_pair(ctl: Client) -> tuple[Character, Character]:
-    for c in await ctl.characters.list():  # the caster pair shares these accounts
-        if c.name in (c2[1] for c2 in CASTERS) and c.state.name != "OFFLINE":
-            await ctl._plumbing_characters.logout(c.guid)
-    for _ in range(40):
-        if all(c.state.name == "OFFLINE" for c in await ctl.characters.list() if c.name in (x[1] for x in CASTERS)):
-            break
-        await asyncio.sleep(0.25)
-    return await ctl.characters.login(A), await ctl.characters.login(B)
+async def logged_in_pair(make_client, label: str) -> tuple[Character, Character]:  # type: ignore[no-untyped-def]
+    """A on the first test account and B on the second, each through its own account's client."""
+    pair = []
+    for account, name in ((0, A), (1, B)):
+        ctl: Client = await make_client(f"{label}-{account}", account)
+        for c in await ctl.characters.list():  # the caster pair shares these accounts
+            if c.name in (c2[1] for c2 in CASTERS) and c.state.name != "OFFLINE":
+                await ctl._plumbing_characters.logout(c.guid)
+        for _ in range(40):
+            if all(c.state.name == "OFFLINE" for c in await ctl.characters.list() if c.name in (x[1] for x in CASTERS)):
+                break
+            await asyncio.sleep(0.25)
+        pair.append(await ctl.characters.login(name))
+    return pair[0], pair[1]
 
 
 async def test_whispers_are_echoed(make_client) -> None:  # type: ignore[no-untyped-def]
     """examples/chat_echo.py logic: A echoes every whisper back to its sender."""
-    ctl = await make_client("chat-echo")
-    a, b = await logged_in_pair(ctl)
+    a, b = await logged_in_pair(make_client, "chat-echo")
     async with a.lease(), b.lease():
         b_events = Collector(b.events(events.Chat))
 
@@ -88,8 +93,7 @@ async def test_whispers_are_echoed(make_client) -> None:  # type: ignore[no-unty
 
 
 async def test_group_invite_arrives_as_prompt_and_is_accepted(make_client) -> None:  # type: ignore[no-untyped-def]
-    ctl = await make_client("prompt-test")
-    a, b = await logged_in_pair(ctl)
+    a, b = await logged_in_pair(make_client, "prompt-test")
     async with a.lease(), b.lease():
         b_events = Collector(b.events(events.Prompt))
         await asyncio.sleep(0.3)
@@ -122,8 +126,7 @@ async def test_group_invite_arrives_as_prompt_and_is_accepted(make_client) -> No
 
 
 async def test_each_occurrence_is_delivered_once(make_client) -> None:  # type: ignore[no-untyped-def]
-    ctl = await make_client("dedup-test")
-    a, _b = await logged_in_pair(ctl)
+    a, _b = await logged_in_pair(make_client, "dedup-test")
     async with a.lease():
         stream = Collector(a.events())
         await asyncio.sleep(0.5)
@@ -166,17 +169,20 @@ async def test_spell_and_aura_events_once_each(make_client) -> None:  # type: ig
         await asyncio.sleep(1)
 
 
-async def test_stalled_subscriber_does_not_slow_the_server(make_client, token) -> None:  # type: ignore[no-untyped-def]
-    ctl = await make_client("stall-test")
-    a, _b = await logged_in_pair(ctl)
-    before = await ctl.server.stats()
+async def test_stalled_subscriber_does_not_slow_the_server(make_client) -> None:  # type: ignore[no-untyped-def]
+    a, _b = await logged_in_pair(make_client, "stall-test")
+    ctl = a._client
+    admin = await make_client("stall-stats", ADMIN)  # GetStats is admin-only
+    before = await admin.server.stats()
 
     # A subscriber that never reads: open the stream and leave it.
-    # No HTTP/2 window growth on this client, so its transport stops accepting data quickly (as a slow
-    # client on a slow link would) and the server-side queue has to absorb the rest.
-    stalled = Client(ctl.target, token=token, controller_id="stalled", channel_options=[("grpc.http2.bdp_probe", 0)])
-    await stalled.connect()
-    stalled_iter = stalled.events(characters=(a.guid,)).__aiter__()
+    # No HTTP/2 window growth on this connection, so its transport stops accepting data quickly (as a slow
+    # client on a slow link would) and the server-side queue has to absorb the rest. A second login of the
+    # same account would end ctl's session, so this second channel carries ctl's own session token.
+    auth = SessionAuth(controller_id="stalled")
+    auth.token = ctl._auth.token
+    stalled = connect(ctl.target, auth, options=[("grpc.http2.bdp_probe", 0)])
+    stalled_iter = EventService(stalled).subscribe([a.guid]).__aiter__()
     # Starting the iterator opens the call; it then takes one event and stops reading.
     first = asyncio.ensure_future(stalled_iter.__anext__())
     await asyncio.sleep(0.5)
@@ -192,7 +198,7 @@ async def test_stalled_subscriber_does_not_slow_the_server(make_client, token) -
             await asyncio.gather(*(a.set_target(None) for _ in range(100)))
             await asyncio.sleep(0.05)  # let the healthy reader keep pace
 
-    after = await ctl.server.stats()
+    after = await admin.server.stats()
     assert after.events_dropped > before.events_dropped, "the stalled subscriber's queue should have overflowed"
     assert after.max_tick_dispatch_us < 100_000, f"world-thread dispatch took {after.max_tick_dispatch_us} us"
     assert len(healthy.of(events.CommandResult)) >= 2900, len(healthy.of(events.CommandResult))
@@ -211,4 +217,4 @@ async def test_stalled_subscriber_does_not_slow_the_server(make_client, token) -
     assert lagged.dropped > 0
 
     await healthy.stop()
-    await stalled.close()
+    await stalled.close()  # the channel

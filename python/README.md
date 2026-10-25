@@ -12,7 +12,8 @@ import asyncio
 from azerothcore_sdk import Client
 
 async def main():
-    async with Client("127.0.0.1:50051", token="<ACSDK.AuthToken>", controller_id="my-bot") as ac:
+    # username/password default to the ACSDK_USERNAME / ACSDK_PASSWORD environment variables
+    async with Client("127.0.0.1:50051", username="acsdkhcalex", password="...", label="my-bot") as ac:
         char = await ac.characters.login("Examplechar")
         async with char.lease():
             print(await char.state())
@@ -22,9 +23,9 @@ async def main():
 asyncio.run(main())
 ```
 
-Requires Python 3.11+ and a worldserver with `mod-acsdk` enabled (`ACSDK.AuthToken` set). The
-server listens on `127.0.0.1:50051` by default and the connection is not encrypted, so reach a
-remote server through an SSH tunnel or VPN rather than exposing the port.
+Requires Python 3.11+ and a worldserver with `mod-acsdk` 1.1 or newer. You log in with an AzerothCore
+account and can see and drive only that account's characters. The server listens on `127.0.0.1:50051`
+(loopback only) and the connection is not encrypted, so reach a remote server through an SSH tunnel.
 
 The full guide (setup, every call, error reasons) is `docs/SDK_GUIDE.md` in the SDK repository;
 the gRPC protos are in `proto/`.

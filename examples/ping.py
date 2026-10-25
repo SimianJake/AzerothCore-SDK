@@ -1,6 +1,8 @@
-"""Phase 0 Spike A check: Health/GetInfo inside a running worldserver, and token rejection.
+"""Phase 0 Spike A check: Health/GetInfo inside a running worldserver, login, and wrong-password rejection.
 
-    python examples\\ping.py --token <ACSDK.AuthToken>
+    python examples\\ping.py
+
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 """
 
 import argparse
@@ -13,19 +15,19 @@ from azerothcore_sdk import Client, Unauthenticated
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="127.0.0.1:50051")
-    parser.add_argument("--token", default=os.environ.get("ACSDK_TOKEN", ""))
     args = parser.parse_args()
 
-    async with Client(args.target, token=args.token, controller_id="ping") as ac:
+    async with Client(args.target, label="ping") as ac:
         print("serving:", await ac.server.health())
         print(await ac.server.info())
+        print("logged in as", ac.session)
 
-    # The listener must reject calls without the right token.
+    # The server must reject a wrong password.
     try:
-        async with Client(args.target, token="wrong-token"):
-            print("ERROR: call with a wrong token was accepted")
+        async with Client(args.target, username=os.environ["ACSDK_USERNAME"], password="wrong-password"):
+            print("ERROR: a wrong password was accepted")
     except Unauthenticated:
-        print("wrong token rejected: UNAUTHENTICATED")
+        print("wrong password rejected: UNAUTHENTICATED")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
-"""Phase 2 acceptance (PLAN.md §9): leases, observers, impersonation, takeover, orphaning, reflexes, kicks."""
+"""Phase 2 acceptance (PLAN.md §9): leases, owner-only access, takeover, orphaning, reflexes, kicks.
+
+Account logins (1.1): a session drives only its own account's characters, so the two controllers here are on
+the two test accounts. Login, session and cross-account refusals are in test_auth.py."""
 
 from __future__ import annotations
 
@@ -9,7 +12,7 @@ import pytest
 from conftest import CHARACTERS, LEASE_TTL_SEC
 from harness import Realm
 
-from azerothcore_sdk import Character, Client, LeaseError, Lifecycle, Unauthenticated
+from azerothcore_sdk import Character, Client, Lifecycle, NotYourCharacter
 from azerothcore_sdk.plumbing import CommandResult
 
 A, B = CHARACTERS[0], CHARACTERS[1]
@@ -34,15 +37,9 @@ async def wait_until(predicate, timeout: float = 10.0, interval: float = 0.25) -
     return False
 
 
-async def test_server_token_required(make_client) -> None:  # type: ignore[no-untyped-def]
-    with pytest.raises(Unauthenticated):
-        await make_client("intruder", server_token="not-the-token")
-
-
-async def test_two_controllers_and_an_observer(make_client) -> None:  # type: ignore[no-untyped-def]
-    ctl_a = await make_client("controller-a")
-    ctl_b = await make_client("controller-b")
-    observer = await make_client("observer")
+async def test_two_accounts_drive_their_own_characters(make_client) -> None:  # type: ignore[no-untyped-def]
+    ctl_a = await make_client("controller-a", 0)
+    ctl_b = await make_client("controller-b", 1)
 
     a = await ctl_a.characters.login(A)
     b = await ctl_b.characters.login(B)
@@ -51,77 +48,81 @@ async def test_two_controllers_and_an_observer(make_client) -> None:  # type: ig
         assert (await say(ctl_a, a, "a speaks")).ok
         assert (await say(ctl_b, b, "b speaks")).ok
 
-        # Neither can command the other's character with its own token.
-        assert (await say(ctl_a, b, "hijack", token=a.lease_token)).reason == "INVALID_LEASE_TOKEN"
+        # Neither can command, or even read, the other account's character, with any token.
+        with pytest.raises(NotYourCharacter):
+            await say(ctl_a, b, "hijack", token=a.lease_token)
+        with pytest.raises(NotYourCharacter):
+            await say(ctl_a, b, "hijack", token=b.lease_token)
+        with pytest.raises(NotYourCharacter):
+            await ctl_a.characters.get(b.guid).state()
 
-        # The observer reads both without any token.
-        for char, holder in ((a, "controller-a"), (b, "controller-b")):
-            state = await observer.characters.get(char.guid).state()
+        # Each reads its own, with its own label as the holder.
+        for ctl, char, holder in ((ctl_a, a, "controller-a"), (ctl_b, b, "controller-b")):
+            state = await ctl.characters.get(char.guid).state()
             assert state.in_world and state.state == Lifecycle.ONLINE
             assert state.lease_holder == holder
 
-        leases = {e.guid: e.holder_label for e in await observer.characters.leases()}
-        assert leases == {a.guid: "controller-a", b.guid: "controller-b"}
+        # ListLeases shows only the caller's own characters.
+        assert {e.guid: e.holder_label for e in await ctl_a.characters.leases()} == {a.guid: "controller-a"}
+        assert {e.guid: e.holder_label for e in await ctl_b.characters.leases()} == {b.guid: "controller-b"}
 
 
-async def test_impersonation_without_token_fails(make_client) -> None:  # type: ignore[no-untyped-def]
-    owner = await make_client("controller-a")
-    impostor = await make_client("controller-a")  # same label, no token
+async def test_other_account_cannot_use_or_claim_a_leased_character(make_client) -> None:  # type: ignore[no-untyped-def]
+    owner = await make_client("controller-a", 0)
+    intruder = await make_client("intruder", 1)
     a = await owner.characters.login(A)
     async with a.lease():
-        stolen = impostor.characters.get(a.guid, A)
-        assert (await say(impostor, stolen, "x", token="")).reason == "INVALID_LEASE_TOKEN"
-        assert (await say(impostor, stolen, "x", token="0" * 64)).reason == "INVALID_LEASE_TOKEN"
+        stolen = intruder.characters.get(a.guid, A)
+        for attempt in (say(intruder, stolen, "x", token=""), say(intruder, stolen, "x", token="0" * 64),
+                        intruder._plumbing_leases.release(a.guid, a.lease_token),
+                        intruder._plumbing_leases.renew(a.guid, a.lease_token),
+                        intruder._plumbing_characters.logout(a.guid, a.lease_token),
+                        stolen.claim(), stolen.claim(force=True)):
+            with pytest.raises(NotYourCharacter):
+                await attempt
 
-        leases = impostor._plumbing_leases
-        assert await leases.release(a.guid, "") == (False, "INVALID_LEASE_TOKEN")
-        assert await leases.renew(a.guid, "0" * 64) == (None, "INVALID_LEASE_TOKEN")
-        assert await impostor._plumbing_characters.logout(a.guid, "") == (False, "INVALID_LEASE_TOKEN")
-
-        # The impostor cannot claim it either without force.
-        with pytest.raises(LeaseError, match="ALREADY_LEASED"):
-            await stolen.claim()
+        # Without the token, the owner's own session cannot command it either.
+        assert (await say(owner, a, "x", token="")).reason == "INVALID_LEASE_TOKEN"
+        assert (await say(owner, a, "x", token="0" * 64)).reason == "INVALID_LEASE_TOKEN"
 
         # The real holder is unaffected.
         assert (await say(owner, a, "still mine")).ok
 
 
 async def test_forced_takeover_invalidates_old_token(make_client) -> None:  # type: ignore[no-untyped-def]
-    first = await make_client("first")
-    second = await make_client("second")
-    a1 = await first.characters.login(A)
+    # One session per account, so a takeover is between two handles of the same session.
+    ctl = await make_client("first")
+    a1 = await ctl.characters.login(A)
     await a1.claim()
     old_token = a1.lease_token
 
-    a2 = second.characters.get(a1.guid, A)
+    a2 = ctl.characters.get(a1.guid, A)
     lease = await a2.claim(force=True)
     try:
         assert lease.previous_holder == "first"
-        assert (await say(first, a1, "old", token=old_token)).reason == "INVALID_LEASE_TOKEN"
-        assert await first._plumbing_leases.renew(a1.guid, old_token) == (None, "INVALID_LEASE_TOKEN")
-        assert (await say(second, a2, "new owner")).ok
+        assert (await say(ctl, a1, "old", token=old_token)).reason == "INVALID_LEASE_TOKEN"
+        assert await ctl._plumbing_leases.renew(a1.guid, old_token) == (None, "INVALID_LEASE_TOKEN")
+        assert (await say(ctl, a2, "new owner")).ok
     finally:
         await a2.release()
         await a1.release()  # old holder's release is a no-op now
 
 
 async def test_dead_controller_orphans_character_which_stays_put(make_client) -> None:  # type: ignore[no-untyped-def]
-    observer = await make_client("observer")
-    doomed = Client(observer.target, token=observer._token, controller_id="doomed")
-    await doomed.connect()
-    a = await doomed.characters.login(A)
+    ctl = await make_client("doomed")
+    a = await ctl.characters.login(A)
     await a.claim()
     start = await a.state()
 
-    # Start a long walk, then "kill" the controller: stop renewing and drop the connection.
+    # Start a long walk, then "kill" the controller: it stops renewing (as a hung process would).
     x, y, z = start.position
-    started = await move(doomed, a, x + 30 * math.cos(start.orientation), y + 30 * math.sin(start.orientation), z)
+    started = await move(ctl, a, x + 30 * math.cos(start.orientation), y + 30 * math.sin(start.orientation), z)
     assert started.status.name == "STARTED", started
     assert a._renewer is not None
     a._renewer.cancel()
-    await doomed.close()
+    a._lease = None
 
-    watcher = observer.characters.get(a.guid, A)
+    watcher = ctl.characters.get(a.guid, A)
 
     async def orphaned() -> bool:
         return (await watcher.state()).lease_holder == ""
@@ -133,9 +134,9 @@ async def test_dead_controller_orphans_character_which_stays_put(make_client) ->
     later = await watcher.state()
     assert later.position == stopped.position, "an orphaned character must stay where it is"
 
-    # Re-claimable by anyone.
+    # Re-claimable by its account.
     async with watcher.lease():
-        assert (await say(observer, watcher, "reclaimed")).ok
+        assert (await say(ctl, watcher, "reclaimed")).ok
 
 
 async def test_gm_teleport_completes_via_reflex(make_client, realm: Realm) -> None:  # type: ignore[no-untyped-def]
@@ -175,7 +176,7 @@ async def test_gm_teleport_completes_via_reflex(make_client, realm: Realm) -> No
 
 
 async def test_gm_kick_logs_character_out(make_client, realm: Realm) -> None:  # type: ignore[no-untyped-def]
-    ctl = await make_client("kick-test")
+    ctl = await make_client("kick-test", 1)
     b = await ctl.characters.login(B)
 
     realm.console(f"kick {B}")

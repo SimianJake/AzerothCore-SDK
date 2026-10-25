@@ -1,6 +1,8 @@
 """Take a quest, fight and loot, sell the loot, recover from death if it happens.
 
-    python examples/quest_and_loot.py <token> <character>
+    python examples/quest_and_loot.py <character>
+
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 
 Run it with a low-level human in Northshire Valley.
 """
@@ -16,8 +18,8 @@ async def find(char, name):
     return next((o for o in await char.nearby("creature", radius=250, limit=400) if o.name == name), None)
 
 
-async def main(token: str, name: str) -> None:
-    async with Client(token=token, controller_id="quest-and-loot") as ac:
+async def main(name: str) -> None:
+    async with Client(label="quest-and-loot") as ac:
         char = await ac.characters.login(name)
         async with char.lease():
             await recover(char)  # no-op when alive
@@ -59,4 +61,4 @@ async def main(token: str, name: str) -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main(sys.argv[1], sys.argv[2]))
+    asyncio.run(main(sys.argv[1]))

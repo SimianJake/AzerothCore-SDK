@@ -20,12 +20,28 @@ Ask the server owner for the following before you start. You need all of them.
 
 | Item | Example | What it is for |
 |---|---|---|
-| The SDK package file | `azerothcore_sdk-1.0.0-py3-none-any.whl` | What you install in Step 3. You may be given a package index address instead (see Step 3). |
+| The SDK package file | `azerothcore_sdk-1.1.0-py3-none-any.whl` | What you install in Step 3. You may be given a package index address instead (see Step 3). |
 | `SDK_GUIDE.md` | | The reference for every call. Keep it next to your code. |
 | Server address | `127.0.0.1:50051` or `192.168.1.20:50051` | Where your program connects. |
-| Token | a long random string | The password for the SDK connection. Keep it private and never commit it to git or paste it in chat. |
-| Character name(s) | `Examplechar` | The characters you are allowed to control. Only characters the owner set up for the SDK will work. |
+| Account name and password | `acsdkhcalex` / a password | Your own game account. The SDK logs in with it, and you can see and control only the characters on this account. Keep the password private and never commit it to git or paste it in chat. |
+| Character name(s) | `Examplechar` | The character(s) on your account. One of them can be in the game at a time. |
 | How to connect | "same PC", "LAN", "Tailscale", "SSH tunnel" | Whether you need anything extra to reach the server (Step 5). |
+
+### For the server owner: creating an account for someone
+
+SDK logins are ordinary AzerothCore game accounts. Give each person their own account; a login can only see and
+control that account's characters. In the worldserver console (or in game as a GM, with a leading `.`):
+
+```
+account create acsdkhcalex <password>
+```
+
+The name must start with `ACSDK.HeadlessAccountPrefix` (default `acsdkhc`) unless you set that option to empty in
+`mod_acsdk.conf`. Keep the account player-level (no `account set gmlevel`): GM accounts are refused by default.
+Then create a character on it, for example by logging in with a game client once, and send the person the
+account name, password and character name. `.acsdk session list` shows who is connected and
+`.acsdk session revoke <account>` disconnects someone; banning the account or changing its password also ends its
+SDK session within a minute.
 
 ## Step 2: Install Python
 
@@ -64,12 +80,17 @@ wherever this guide says `py`.
    - macOS/Linux: `python3 -m venv .venv` then `source .venv/bin/activate`.
 3. Install the SDK. Use the line that matches what the server owner gave you:
    ```powershell
-   # You were given a .whl file: copy it into this folder, then
-   pip install .\azerothcore_sdk-1.0.0-py3-none-any.whl
+   # Nothing special (most people): install the release straight from GitHub (needs Git installed)
+   pip install "azerothcore-sdk @ git+https://github.com/SimianJake/AzerothCore-SDK.git@v1.1.0#subdirectory=python"
+
+   # Or download the .whl from the GitHub release page
+   # (https://github.com/SimianJake/AzerothCore-SDK/releases), or use one the owner gave you:
+   pip install .\azerothcore_sdk-1.1.0-py3-none-any.whl
 
    # You were given a package index address instead
    pip install --extra-index-url http://<index-address>/simple/ azerothcore-sdk
    ```
+   Ask the server owner which SDK version matches their server; replace `1.1.0` above if it differs.
    pip also downloads the two libraries the SDK needs (`grpcio` and `protobuf`) from the internet.
    If the index address starts with `http://` and is not `localhost`, add
    `--trusted-host <index-host>` to the command.
@@ -77,23 +98,25 @@ wherever this guide says `py`.
    ```powershell
    python -c "import azerothcore_sdk; print(azerothcore_sdk.__version__)"
    ```
-   It should print the version, for example `1.0.0`.
+   It should print the version, for example `1.1.0`.
 
-## Step 4: Store the address and token
+## Step 4: Store the address and your login
 
-Keep the token out of your code by putting it in environment variables. In PowerShell, run these
-**once**. They are saved for your user account, and apply to PowerShell windows you open afterwards:
+Keep your password out of your code by putting it in environment variables. The SDK reads
+`ACSDK_USERNAME` and `ACSDK_PASSWORD` by itself. In PowerShell, run these **once**. They are saved for
+your user account, and apply to PowerShell windows you open afterwards:
 
 ```powershell
 setx ACSDK_TARGET "127.0.0.1:50051"
-setx ACSDK_TOKEN "<the token you were given>"
-setx ACSDK_CHARACTER "<a character name you were given>"
+setx ACSDK_USERNAME "<your account name>"
+setx ACSDK_PASSWORD "<your account password>"
+setx ACSDK_CHARACTER "<your character's name>"
 ```
 
 Close PowerShell, open a new one, `cd C:\my-acsdk-bot`, and activate the venv again
 (`.venv\Scripts\Activate.ps1`).
 
-macOS/Linux: add `export ACSDK_TARGET=...` lines (same three names) to `~/.bashrc` or `~/.zshrc`, then
+macOS/Linux: add `export ACSDK_TARGET=...` lines (same four names) to `~/.bashrc` or `~/.zshrc`, then
 open a new terminal.
 
 ## Step 5: Make sure you can reach the server
@@ -113,7 +136,7 @@ What you do depends on what the server owner said in Step 1:
 Now test the connection. Save this as `check.py` in your folder:
 
 ```python
-"""Connects to the server and lists the characters you can control. Changes nothing."""
+"""Logs in to the server and lists the characters on your account. Changes nothing."""
 import asyncio
 import os
 
@@ -121,10 +144,9 @@ from azerothcore_sdk import Client
 
 
 async def main():
-    async with Client(os.environ["ACSDK_TARGET"], token=os.environ["ACSDK_TOKEN"],
-                      controller_id="check") as ac:
+    async with Client(os.environ["ACSDK_TARGET"], label="check") as ac:  # logs in as ACSDK_USERNAME
         info = await ac.server.info()
-        print("Connected to realm:", info.realm_name)
+        print("Connected to realm:", info.realm_name, "as", ac.session.username)
         for c in await ac.characters.list():
             print(f"  {c.name}  level {c.level}  online={c.online}")
 
@@ -155,8 +177,7 @@ from azerothcore_sdk import Client
 
 async def main():
     name = os.environ["ACSDK_CHARACTER"]
-    async with Client(os.environ["ACSDK_TARGET"], token=os.environ["ACSDK_TOKEN"],
-                      controller_id="hello") as ac:
+    async with Client(os.environ["ACSDK_TARGET"], label="hello") as ac:
         char = await ac.characters.login(name)       # does nothing if it is already logged in
         async with char.lease():                     # take control; released when the block ends
             state = await char.state()
@@ -185,13 +206,15 @@ move.
 - **Everything is `async`.** SDK calls are awaited (`await char.say(...)`) inside an `async def`
   function, which you start with `asyncio.run(main())`. If you are new to this, copy the shape of the
   scripts above.
-- **One `Client` per program.** Open it with `async with Client(...) as ac:`. All your characters share
-  it. `controller_id` is a label for your program that shows up in server logs. Pick a name that says
-  who you are, for example `"alex-fishing-bot"`.
-- **Reading is free, acting needs a lease.** Anyone with the token can read a character's state. To make
-  it do something you must hold its **lease**: `async with char.lease():`. Only one program can hold a
-  character's lease at a time. If someone else has it you get `LeaseError` with `ALREADY_LEASED`.
-  The SDK renews the lease for you while the block runs.
+- **One `Client` per program, logged in as your account.** Open it with `async with Client(...) as ac:`.
+  All your characters share it. `label` is a name for your program that shows up in server logs, for
+  example `"alex-fishing-bot"`. An account has one SDK session at a time: starting a second program with
+  the same account logs the first one out (its leases end).
+- **You only see your own characters.** Anything about another account's character fails with
+  `NotYourCharacter`.
+- **Reading is free, acting needs a lease.** You can read your characters' state at any time. To make one
+  do something you must hold its **lease**: `async with char.lease():`. Only one lease per character at a
+  time; the SDK renews it for you while the block runs.
 - **Characters do nothing on their own.** If your program stops, the lease runs out after about 15
   seconds and the character just stands there, still logged in. Call `await char.logout()` when you are
   finished with it.
@@ -230,12 +253,17 @@ Python extension works well. Point it at your venv with "Python: Select Interpre
 |---|---|
 | `py` or `python` is not recognized | Python is not installed or not on PATH. Redo Step 2 and tick "Add python.exe to PATH". |
 | `No module named azerothcore_sdk` | The venv is not active. Run `.venv\Scripts\Activate.ps1` in your project folder. |
-| `KeyError: 'ACSDK_TOKEN'` | The environment variables are not set in this window. Redo Step 4 and open a new PowerShell. |
+| `KeyError: 'ACSDK_TARGET'` or `ValueError: Client needs username and password` | The environment variables are not set in this window. Redo Step 4 and open a new PowerShell. |
 | `ServerUnavailable` | Your program cannot reach the server. Check the address, that the SSH tunnel or VPN is up, and ask the owner whether the server is running. |
-| `Unauthenticated` | The token is wrong. Copy it again exactly, with no spaces or quotes around it. |
-| `LoginFailed` | The character could not be logged in; the reason is in the message. `CHARACTER_NOT_FOUND`: check the spelling. `ACCOUNT_NOT_ELIGIBLE`: the owner has not set that character up for the SDK. `ACCOUNT_ALREADY_ONLINE`: someone is playing a character on that account in the game. |
-| `LeaseError: ALREADY_LEASED` | Another program controls this character. Stop it, or wait for it to finish. `char.lease(force=True)` takes over, but only do that if you know the other program is yours. |
-| A command returns `INVALID_LEASE_TOKEN` | The command ran outside the `async with char.lease():` block, or the lease was lost. |
+| `Unauthenticated` | Wrong account name or password (it is not case-sensitive). Copy them again exactly, with no spaces or quotes around them. |
+| `AccountRefused` | The password is right but the account may not use the SDK: `BANNED`, `LOCKED`, `GM_ACCOUNT`, or `ACCOUNT_NOT_ELIGIBLE` (its name does not start with the server's account prefix). Ask the server owner. |
+| `ServerBusy: too many failed logins` | Several wrong passwords in a row for that account name; wait the number of seconds it says. Other accounts are not affected. |
+| `NotYourCharacter` | That character is on another account. You can only use your own account's characters. |
+| `IncompatibleServer` | The server runs an older `mod-acsdk` (before 1.1, which still used a shared token). Ask the owner which SDK version to use. |
+| `LoginFailed` | The character could not be logged in; the reason is in the message. `CHARACTER_NOT_FOUND`: check the spelling. `ACCOUNT_ALREADY_ONLINE`: someone is playing a character on your account in the game, or another of your characters is already logged in. |
+| `LeaseError: ALREADY_LEASED` | Another part of your program already holds this character's lease. `char.lease(force=True)` takes it over. |
+| A command returns `INVALID_LEASE_TOKEN` | The command ran outside the `async with char.lease():` block, or the lease was lost (for example because your session ended: another program logged in with your account, or you were idle for 30 minutes). |
+| `pip install "azerothcore-sdk @ git+https://..."` says `git` is not found | Install Git (<https://git-scm.com/downloads>, or `winget install Git.Git`), open a new terminal, and try again. Or download the `.whl` from the GitHub release page instead. |
 | `pip install` fails downloading `grpcio` | You need internet access to PyPI. On a work network, ask whether a proxy is required. |
 
 If you think you have found a bug in the SDK, tell the server owner what your script did, the `reason` it got
@@ -243,9 +271,11 @@ back, and your SDK version (`python -c "import azerothcore_sdk; print(azerothcor
 
 ## Updating the SDK
 
-When the server owner sends a new version, activate your venv and install the new file the same way:
+When the server owner moves to a new version, activate your venv and install it the same way:
 
 ```powershell
+pip install --upgrade "azerothcore-sdk @ git+https://github.com/SimianJake/AzerothCore-SDK.git@v<new-version>#subdirectory=python"
+# or, from a .whl file:
 pip install --upgrade .\azerothcore_sdk-<new-version>-py3-none-any.whl
 # or, from a package index:
 pip install --upgrade --extra-index-url http://<index-address>/simple/ azerothcore-sdk

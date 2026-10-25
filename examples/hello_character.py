@@ -1,13 +1,12 @@
-"""Phase 1 acceptance: connect, show server info, list eligible headless characters.
+"""Phase 1 acceptance: connect, show server info, list your account's characters.
 
-    python examples\\hello_character.py --token <ACSDK.AuthToken>
+    python examples\\hello_character.py
 
-The token defaults to the ACSDK_TOKEN environment variable.
+Log in with an AzerothCore account: set ACSDK_USERNAME and ACSDK_PASSWORD (environment variables).
 """
 
 import argparse
 import asyncio
-import os
 
 from azerothcore_sdk import Client
 
@@ -15,21 +14,21 @@ from azerothcore_sdk import Client
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", default="127.0.0.1:50051")
-    parser.add_argument("--token", default=os.environ.get("ACSDK_TOKEN", ""))
     args = parser.parse_args()
 
-    async with Client(args.target, token=args.token, controller_id="hello") as ac:
+    async with Client(args.target, label="hello") as ac:
         info = await ac.server.info()
         print(f"Connected to realm '{info.realm_name}' ({info.core_revision}), uptime {info.uptime_ms / 1000:.0f}s")
 
         characters = await ac.characters.list()
         if not characters:
-            print("No eligible headless characters (accounts matching ACSDK.HeadlessAccountPrefix).")
+            print(f"Account {ac.session.username} has no characters.")
         for c in characters:
             state = "online" if c.online else "offline"
             print(f"  {c.name:<12} level {c.level:<3} account {c.account_name:<16} guid {c.guid:<8} {state}")
 
-        print(await ac.server.stats())
+        if ac.session.admin:
+            print(await ac.server.stats())  # admin sessions only
 
 
 if __name__ == "__main__":

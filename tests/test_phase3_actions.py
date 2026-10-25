@@ -29,6 +29,7 @@ async def go_to_kobolds(char: Character) -> None:
 
 async def logout_if_online(client: Client, *names: str) -> None:
     # One online character per account: the warrior pair and the caster pair share the two test accounts.
+    # A client lists (and may log out) only its own account's characters.
     for c in await client.characters.list():
         if c.name in names and c.state.name != "OFFLINE":
             await client._plumbing_characters.logout(c.guid)
@@ -108,14 +109,17 @@ async def test_cast_failures_carry_azerothcore_reasons(make_client) -> None:  # 
 
 async def test_other_players_spell_does_not_resolve_own_cast(make_client, casters) -> None:  # type: ignore[no-untyped-def]
     mage_name, priest_name = casters
-    ctl = await make_client("correlation-test")
-    await logout_if_online(ctl, WARRIOR, OTHER)
-    mage = await ctl.characters.login(mage_name)
-    priest = await ctl.characters.login(priest_name)
+    ctl_mage = await make_client("correlation-mage", 0)
+    ctl_priest = await make_client("correlation-priest", 1)
+    await logout_if_online(ctl_mage, WARRIOR)
+    await logout_if_online(ctl_priest, OTHER)
+    mage = await ctl_mage.characters.login(mage_name)
+    priest = await ctl_priest.characters.login(priest_name)
     try:
         await _correlation(mage, priest)
     finally:
-        await logout_if_online(ctl, mage_name, priest_name)
+        await logout_if_online(ctl_mage, mage_name)
+        await logout_if_online(ctl_priest, priest_name)
 
 
 async def _correlation(mage, priest) -> None:  # type: ignore[no-untyped-def]
@@ -165,7 +169,7 @@ async def test_kill_a_mob(make_client) -> None:  # type: ignore[no-untyped-def]
 
 
 async def test_commands_need_the_lease_token(make_client) -> None:  # type: ignore[no-untyped-def]
-    ctl = await make_client("no-token")
+    ctl = await make_client("no-token", 1)
     other = await ctl.characters.login(OTHER)
     r = await other.say("not leased")
     assert r.status == CommandStatus.FAILED and r.reason == "INVALID_LEASE_TOKEN", r

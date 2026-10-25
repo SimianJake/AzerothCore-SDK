@@ -179,12 +179,38 @@ genuine game events (death, server shutdown, GM kick). A character whose control
 `ONLINE` and frozen in place (see §4.4) — it is **not** logged out unless
 `ACSDK.Lease.LogoutOnOrphanSec` is set (default 0 = never).
 
-### 4.4 Multiple controllers: leases and observers
+### 4.4 Multiple controllers: accounts, leases and observers
 
 **Controllers must not be able to impersonate each other (DECIDED).**
 
-- Connecting requires the server auth token (`ACSDK.AuthToken`) — this only proves "allowed to connect".
-- `controller_id` (metadata) is a **human-readable label** for logs and `ListLeases`. It grants nothing.
+**Account logins (DECIDED 2026-10-24, mod-acsdk/SDK 1.1.0; replaces the shared `ACSDK.AuthToken`):**
+
+- SDK logins are ordinary AzerothCore game accounts (`account` table, SRP6 salt + verifier). One login = one
+  account, which owns only its own characters. AzerothCore's one-online-character-per-account rule applies.
+  No grant table.
+- Hard switch: the shared server token is gone, with no transition mode; `ACSDK.AuthToken` left in a config is
+  ignored with a warning.
+- **Owner-only:** a session may get state, events, leases and anything else only for characters on its own
+  account. Another account's character is `PERMISSION_DENIED`, whether or not it exists.
+- `AuthService.Login` takes `authorization: Basic base64(user:pass)`, upper-cases both as AzerothCore does,
+  verifies the SRP6 verifier in constant time, and returns an opaque 256-bit session token (only its SHA-256 is
+  kept, in memory). Unknown account and wrong password are the same `UNAUTHENTICATED` after the same work.
+  Banned, locked and (by default) GM accounts are refused. In-memory backoff per username and per peer address;
+  nothing is written to the auth DB.
+- One session per account (a new login ends the previous one); sliding idle timeout (30 min) and absolute
+  lifetime (24 h). A session that ends (logout, expiry, replacement, revocation) releases its leases with
+  `LeaseLost(SESSION_ENDED)` and ends its event streams; characters stay logged in. A periodic recheck (60 s)
+  ends sessions whose account was banned, locked, deleted, or changed password or GM level. Console/GM:
+  `.acsdk session list`, `.acsdk session revoke <account>`.
+- Admin (GM level >= `ACSDK.Auth.AdminGmLevel`, needs `ACSDK.Auth.AllowGmAccounts`): `GetStats`,
+  `DebugService`, nothing over other accounts' characters.
+- `ACSDK.HeadlessAccountPrefix` stays as an extra server-wide gate on which accounts may log in (empty = any).
+- Transport is still plain HTTP/2, so the listener refuses non-loopback bind addresses until TLS exists.
+
+Leases, within an account:
+
+- The label (`Client(label=...)`, or `x-acsdk-controller-id`) is **human-readable** for logs and `ListLeases`. It
+  grants nothing.
 - **Lease token:** `ClaimCharacter(character)` returns an **unguessable lease token** — ≥128 bits from a
   cryptographically secure RNG (e.g. OpenSSL `RAND_bytes`), encoded as a string — plus a TTL.
   **Every command and every lease operation for that character must carry the token**
@@ -192,13 +218,14 @@ genuine game events (death, server shutdown, GM kick). A character whose control
 - The server compares tokens in constant time, never logs them, and never returns another holder's
   token (`ListLeases` shows holder label and expiry only).
 - A command with a missing, wrong, or expired token fails with `INVALID_LEASE_TOKEN` and has no effect.
-- Tokens are bearer capabilities: valid until `ReleaseCharacter`, TTL expiry, or takeover. A controller that
-  reconnects within the TTL may keep using its token. Renewal via `RenewLease(token)` or event-stream keepalive.
+- Tokens are bearer capabilities, **bound to the session that claimed them**: valid until `ReleaseCharacter`,
+  TTL expiry, takeover, or the end of that session. Renewal via `RenewLease(token)`.
 - `ClaimCharacter(force=true)` (if `ACSDK.Lease.AllowForceTakeover`) issues a new token and **invalidates
   the old one**; the previous holder gets `LeaseLost` and its in-flight commands are `CANCELLED`.
 - Lease expiry (controller died): in-flight commands are cancelled, movement stops, character stays put.
-  The character becomes **orphaned** and claimable. No other behavior.
-- **Observers:** any authenticated connection may `GetState`/`Subscribe` on any character without a token.
+  The character becomes **orphaned** and claimable again by its account. No other behavior.
+- **Observers:** a session may `GetState`/`Subscribe` on its own account's characters without a lease token.
+  (Before 1.1 any connection could observe any character.)
 
 ### 4.5 Lightweight by design
 
@@ -475,7 +502,7 @@ import asyncio
 from azerothcore_sdk import Client, events
 
 async def main():
-    async with Client("127.0.0.1:50051", token="...", controller_id="grinder-1") as ac:
+    async with Client("127.0.0.1:50051", username="acsdkhcbot", password="...", label="grinder-1") as ac:
         char = await ac.characters.login("Thrall")    # no-op if already online
         async with char.lease():                      # ClaimCharacter; token kept internally,
                                                       # attached to every command; released on exit
@@ -510,13 +537,18 @@ running in the controller — never in the server.
 ACSDK.Enable = 1
 ACSDK.BindAddress = "127.0.0.1"
 ACSDK.Port = 50051
-ACSDK.AuthToken = ""                 # required; gRPC listener refuses to start if empty
+ACSDK.Auth.AllowGmAccounts = 0       # 1.1: GM accounts may log in (needed for an admin session)
+ACSDK.Auth.AdminGmLevel = 3          # 1.1: sessions at or above this GM level are admin
+ACSDK.Auth.SessionIdleSec = 1800     # 1.1: sliding idle timeout
+ACSDK.Auth.SessionMaxSec = 86400     # 1.1: absolute session lifetime
+ACSDK.Auth.RecheckSec = 60           # 1.1: re-read live sessions' accounts (ban/lock/password changes)
+                                     # (ACSDK.AuthToken: removed in 1.1, ignored with a warning)
 ACSDK.MaxCommandsPerTick = 200
 ACSDK.MaxTickBudgetMs = 5
 ACSDK.EventQueueSize = 4096
 ACSDK.CommandQueueSize = 4096        # queued world-thread commands; full → RESOURCE_EXHAUSTED
 ACSDK.MaxListResults = 1000          # cap on CharacterService.List
-ACSDK.HeadlessAccountPrefix = "acsdkhc"  # accounts whose characters may be logged in headless
+ACSDK.HeadlessAccountPrefix = "acsdkhc"  # accounts that may log in to the SDK; empty = any (1.1; was: none)
 ACSDK.MaxHeadlessCharacters = 50
 ACSDK.Autostart.Characters = ""      # comma-separated names logged in at startup
 ACSDK.Lease.TtlSec = 15
@@ -701,6 +733,7 @@ _Append entries as `YYYY-MM-DD — <decision or milestone> — <rationale/notes>
 - 2026-10-22 — **Long pathfinding test (owner request): Elwynn Forest → Westfall.** Examplechar2 raised to level 30 by GM command (so road mobs don't end the run), started in Northshire Valley (-8921.09, -119.14, 82.19, zone 12 Elwynn), destination Sentinel Hill (-10624.5, 1096.66, 33.76), limit 1 h. Arrived in 317.9 s at (-10624.50, 1096.66, 33.76) (zone 40 Westfall); entered Westfall at (-10146.13, 810.67, 21.68) after 232 s; walked 2144.7 yd vs 2092.8 yd straight line, 43 moves, 6 path queries. Route: `docs/westfall_route.svg` / `.json`. A repeat run with the same code arrived identically; an experiment that split long legs at GetHeight points stranded the character on Sentinel Tower's roof 108 yd short and was reverted.
 - 2026-10-22 — **Map data:** AzerothCore client-data v20.0 (wowgaming/client-data, 1.1 GB; dbc/maps/vmaps/mmaps) downloaded to `C:\acsdk-build\data` with owner approval, in place of extracting from a client for now.
 - 2026-10-22 — **Bug-report fixes (SDK 0.5.0), from consumer testing (bug-reports/).** (1) DebugService.CreateCharacter looked the new character up by the name as sent while AC stores it capitalised, so it reported REJECTED_OR_TIMEOUT for characters it had created; now normalised (`normalizePlayerName`), returns the stored `name`, and failures carry AC's `SMSG_CHAR_CREATE` ResponseCodes name. (2) New *interact* channel in ActionService: ReleaseSpirit, ReclaimCorpse, SpiritHealerResurrect, Talk (GOSSIP_HELLO / QUESTGIVER_HELLO / LIST_INVENTORY by npc flags), SelectGossipOption, AcceptQuest, CompleteQuest (drives REQUEST_REWARD / CHOOSE_REWARD as the client's dialog would), AbandonQuest, OpenVendor, BuyItem, SellItem, EquipItem, Loot (open, take money and allowed slots, release). Window contents come back in `CommandResult.interaction`, decoded from the SMSGs (golden-byte tests). Handlers that refuse silently time out with a reason read from game state (TOO_FAR, NOT_DEAD, RECLAIM_DELAY, QUEST_NOT_OFFERED, ...); game refusals use AC's enum names (BUY_ERR_*, SELL_ERR_*, EQUIP_ERR_*, LOOT_ERROR_*, INVALIDREASON_*), generated by `scripts/gen_enum_names.py`. `GetState` sections CORPSE, EQUIPMENT, INVENTORY, QUESTS. Movement no longer fails DIED for a character that was already dead (ghosts walk). Python: porcelain for all of it, `helpers.recover()` (release → ghost run → reclaim, spirit healer fallback), `helpers.approach()`, `helpers.kill(stop_below_health=20)` (LOW_HEALTH), kill() finds its target by guid (it reported TARGET_GONE beyond 60 yd). Verified live: Examplechar2 died and was recovered at its corpse; Examplechar took and turned in A Threat Within, abandoned/re-took Kobold Camp Cleanup, killed and looted wolves, sold the loot, bought and equipped a Crude Throwing Axe; Eagan's Wolves Across the Border was refused with INVALIDREASON_DONT_HAVE_REQ (prerequisite missing), as in the game.
+- 2026-10-24 — **Account-based authentication (mod-acsdk and SDK 1.1.0, branch `v1.1.0-Auth`).** The shared `ACSDK.AuthToken` is replaced by AzerothCore account logins (`AuthService`: Login/Logout/WhoAmI), owner-only access to characters, session-bound leases, one session per account, idle/absolute expiry, periodic revocation recheck, `.acsdk session list/revoke`, admin sessions for GetStats/DebugService, loopback-only listener. `GetInfo` gains `api_minor` and `auth_modes` (additive; package stays `acsdk.v1`). Python: `Client(target, username=, password=, label=, relogin=True)`, `NotYourCharacter`, `AccountRefused`, `IncompatibleServer`. See §4.4 and ARCHITECTURE.md §4.3.
 
 ## 14. Alternatives considered (and why rejected)
 - **Python headless client speaking the 3.3.5a protocol:** large protocol effort; no server-side
@@ -719,7 +752,8 @@ _Append entries as `YYYY-MM-DD — <decision or milestone> — <rationale/notes>
 | Slow or crashed controllers | Bounded queues, per-tick budgets, lease TTLs |
 | Resource bloat with many controllers | §4.5 design defaults; diagnostic counters |
 | Replies attributed to the wrong command | Per-opcode correlation strategies (§4.6.5); single-in-flight channels where needed; Phase 3 test with spells cast on the character by others |
-| Controller impersonation / lease theft | Unguessable lease tokens on every command (§4.4); Phase 2 security tests |
+| Controller impersonation / lease theft | Account logins, owner-only access, session-bound unguessable lease tokens on every command (§4.4); Phase 2 and auth tests |
+| Passwords and session tokens in plain HTTP/2 | Listener refuses non-loopback addresses; remote users go through an SSH tunnel; TLS is future work |
 | Logic creeping into plumbing over time | §4.0 placement rule; reviews reject C++ features that porcelain could build |
 | Packet layouts built incorrectly (silent misbehavior) | Formats taken from handler read code; reuse AC serializers; golden-byte tests; log AC's packet-read errors |
 | Some handlers assume client-side state a headless character lacks (e.g. movement/facing flags) | Research R3 flags these per opcode; resolve via whitelisted movement APIs or reflexes, not by reimplementing the handler |
