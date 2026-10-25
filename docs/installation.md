@@ -80,12 +80,17 @@ wherever this guide says `py`.
    - macOS/Linux: `python3 -m venv .venv` then `source .venv/bin/activate`.
 3. Install the SDK. Use the line that matches what the server owner gave you:
    ```powershell
-   # You were given a .whl file: copy it into this folder, then
+   # Nothing special (most people): install the release straight from GitHub (needs Git installed)
+   pip install "azerothcore-sdk @ git+https://github.com/SimianJake/AzerothCore-SDK.git@v1.1.0#subdirectory=python"
+
+   # Or download the .whl from the GitHub release page
+   # (https://github.com/SimianJake/AzerothCore-SDK/releases), or use one the owner gave you:
    pip install .\azerothcore_sdk-1.1.0-py3-none-any.whl
 
    # You were given a package index address instead
    pip install --extra-index-url http://<index-address>/simple/ azerothcore-sdk
    ```
+   Ask the server owner which SDK version matches their server; replace `1.1.0` above if it differs.
    pip also downloads the two libraries the SDK needs (`grpcio` and `protobuf`) from the internet.
    If the index address starts with `http://` and is not `localhost`, add
    `--trusted-host <index-host>` to the command.
@@ -258,6 +263,7 @@ Python extension works well. Point it at your venv with "Python: Select Interpre
 | `LoginFailed` | The character could not be logged in; the reason is in the message. `CHARACTER_NOT_FOUND`: check the spelling. `ACCOUNT_ALREADY_ONLINE`: someone is playing a character on your account in the game, or another of your characters is already logged in. |
 | `LeaseError: ALREADY_LEASED` | Another part of your program already holds this character's lease. `char.lease(force=True)` takes it over. |
 | A command returns `INVALID_LEASE_TOKEN` | The command ran outside the `async with char.lease():` block, or the lease was lost (for example because your session ended: another program logged in with your account, or you were idle for 30 minutes). |
+| `pip install "azerothcore-sdk @ git+https://..."` says `git` is not found | Install Git (<https://git-scm.com/downloads>, or `winget install Git.Git`), open a new terminal, and try again. Or download the `.whl` from the GitHub release page instead. |
 | `pip install` fails downloading `grpcio` | You need internet access to PyPI. On a work network, ask whether a proxy is required. |
 
 If you think you have found a bug in the SDK, tell the server owner what your script did, the `reason` it got
@@ -265,9 +271,11 @@ back, and your SDK version (`python -c "import azerothcore_sdk; print(azerothcor
 
 ## Updating the SDK
 
-When the server owner sends a new version, activate your venv and install the new file the same way:
+When the server owner moves to a new version, activate your venv and install it the same way:
 
 ```powershell
+pip install --upgrade "azerothcore-sdk @ git+https://github.com/SimianJake/AzerothCore-SDK.git@v<new-version>#subdirectory=python"
+# or, from a .whl file:
 pip install --upgrade .\azerothcore_sdk-<new-version>-py3-none-any.whl
 # or, from a package index:
 pip install --upgrade --extra-index-url http://<index-address>/simple/ azerothcore-sdk

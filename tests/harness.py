@@ -1,8 +1,11 @@
 """Local test realm harness: start worldserver from the build tree, send console commands, stop cleanly.
 
-Paths default to the layout in mod-acsdk's docs/windows-build.md; override with ACSDK_BIN (folder with worldserver.exe).
+ACSDK_BIN is the folder with the worldserver executable. It defaults to the Windows layout in mod-acsdk's
+docs/windows-build.md, or on Linux/macOS to ~/azeroth-server/bin (AzerothCore's usual install prefix).
+ACSDK_MODULE_CONF overrides where mod_acsdk.conf is (default: configs/modules next to the exe on Windows,
+../etc/modules on Linux/macOS).
 worldserver shuts down when its console stdin reaches EOF, so stdin stays an open pipe for the whole run;
-CTRL_BREAK (new process group) triggers a normal shutdown.
+CTRL_BREAK (Windows, new process group) or SIGINT (elsewhere) triggers a normal shutdown.
 """
 
 from __future__ import annotations
@@ -15,9 +18,13 @@ import threading
 import time
 from pathlib import Path
 
-BIN = Path(os.environ.get("ACSDK_BIN", r"C:\acsdk-build\ac\bin\RelWithDebInfo"))
+WINDOWS = os.name == "nt"
+_DEFAULT_BIN = r"C:\acsdk-build\ac\bin\RelWithDebInfo" if WINDOWS else str(Path.home() / "azeroth-server" / "bin")
+BIN = Path(os.environ.get("ACSDK_BIN", _DEFAULT_BIN))
+EXE = BIN / ("worldserver.exe" if WINDOWS else "worldserver")
 LOG = BIN / "Server.log"
-MOD_CONF = BIN / "configs" / "modules" / "mod_acsdk.conf"
+_DEFAULT_CONF = BIN / "configs" / "modules" if WINDOWS else BIN.parent / "etc" / "modules"
+MOD_CONF = Path(os.environ.get("ACSDK_MODULE_CONF", _DEFAULT_CONF / "mod_acsdk.conf"))
 
 
 def set_module_option(key: str, value: str) -> None:
@@ -38,13 +45,13 @@ class Realm:
     def start(self, timeout: float = 240.0) -> None:
         LOG.unlink(missing_ok=True)
         self.proc = subprocess.Popen(
-            [str(BIN / "worldserver.exe")],
+            [str(EXE)],
             cwd=BIN,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
-            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if WINDOWS else 0,
         )
         threading.Thread(target=self._pump, daemon=True).start()
         deadline = time.monotonic() + timeout
@@ -89,7 +96,7 @@ class Realm:
     def stop(self, timeout: float = 180.0) -> int:
         assert self.proc
         if self.proc.poll() is None:
-            os.kill(self.proc.pid, signal.CTRL_BREAK_EVENT)
+            os.kill(self.proc.pid, signal.CTRL_BREAK_EVENT if WINDOWS else signal.SIGINT)
             try:
                 self.proc.wait(timeout=timeout)
             except subprocess.TimeoutExpired:

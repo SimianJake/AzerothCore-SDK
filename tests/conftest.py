@@ -1,6 +1,6 @@
 """pytest fixtures: one worldserver for the whole session, started and stopped by tests/harness.py.
 
-Run from the repo root:  python\\.venv\\Scripts\\python.exe -m pytest tests -v
+Run from the repo root with the dev venv's python:  python -m pytest tests -v
 Needs your own test accounts and characters, named in environment variables or in tests/local.env (gitignored;
 copy tests/local.env.example):
   ACSDK_TEST_ACCOUNTS    two accounts as name:password,name:password, names matching ACSDK.HeadlessAccountPrefix

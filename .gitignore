@@ -17,7 +17,7 @@ vcpkg_installed/
 *.user
 .vs/
 
-# Local config (secrets such as ACSDK.AuthToken)
+# Local server config
 *.conf
 !*.conf.dist
 tests/out/

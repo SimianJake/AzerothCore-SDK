@@ -15,9 +15,10 @@ The SDK talks to the server through the **[mod-acsdk](https://github.com/SimianJ
   [docs/installation.md](docs/installation.md) (step by step for new users)
 - **Examples:** `examples/`
 - **Building and hosting the pip package:** [docs/PUBLISHING.md](docs/PUBLISHING.md), `scripts\build_sdk.ps1`
+- **License:** MIT ([LICENSE](LICENSE)). The server module, mod-acsdk, is GPL-2.0 like AzerothCore.
 - **Protos:** `proto/`, a copy of the module's API used to generate the Python stubs ([proto/README.md](proto/README.md))
 - **Design and decisions:** [PLAN.md](PLAN.md); how everything works, file by file:
   [ARCHITECTURE.md](https://github.com/SimianJake/mod-acsdk/blob/main/docs/ARCHITECTURE.md) in the module repository
-- **Tests:** `python\.venv\Scripts\python.exe -m pytest tests -v`. They start a local worldserver built with the
-  module (see `tests/harness.py`) and need two test accounts and their characters named in `tests/local.env` (see
+- **Tests:** `python -m pytest tests -v` with the dev venv active. They start a local worldserver built with the
+  module (`ACSDK_BIN` points at its folder; see `tests/harness.py`) and need two test accounts and their characters named in `tests/local.env` (see
   `tests/local.env.example`). `test_client_auth.py` and `test_proto_pinned.py` need no server.
